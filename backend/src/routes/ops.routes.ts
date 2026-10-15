@@ -15,6 +15,8 @@ import { simulatePolicyChange } from '../domain/policy-simulation';
 import { loadPolicy } from '../domain/policy';
 import { staleProjectionService } from '../ops/stale-projections.service';
 import { defaultSearchIndex } from '../services/search-index.service';
+import { SyntheticJourneyMonitor } from '../ops/synthetic-journey-monitor';
+import { verifySnapshotRestore } from '../db/snapshot-restore-verification';
 
 export interface OpsRouterOptions {
   storage: InvoiceStorage;
@@ -83,6 +85,31 @@ export function createOpsRouter(options: OpsRouterOptions): Router {
       const mode = req.body?.mode === 'queued' ? 'queued' : 'immediate';
       const evidence = await staleProjectionService.repair(options.storage, defaultSearchIndex, { mode });
       res.json({ success: true, data: evidence, correlationId: req.correlationId });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Synthetic journey monitor for critical workflow (Issue #264)
+  router.post('/ops/synthetic-journey/run', admin, async (req, res, next) => {
+    try {
+      const monitor = new SyntheticJourneyMonitor({ storage: options.storage });
+      const report = await monitor.runJourney();
+      res.status(report.success ? 200 : 503).json({ success: report.success, data: report, correlationId: req.correlationId });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Snapshot restore verification for critical data and derived indexes (Issue #263)
+  router.post('/ops/snapshot-restore/verify', admin, async (req, res, next) => {
+    try {
+      const snapshotPkg = req.body?.snapshotPackage || {
+        invoices: options.storage.getAllInvoices ? await options.storage.getAllInvoices() : [],
+        metadata: { exportedAt: new Date().toISOString(), source: 'api' },
+      };
+      const report = verifySnapshotRestore(snapshotPkg);
+      res.status(report.ok ? 200 : 422).json({ success: report.ok, data: report, correlationId: req.correlationId });
     } catch (err) {
       next(err);
     }

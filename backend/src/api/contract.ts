@@ -622,6 +622,24 @@ export const API_CONTRACT: ContractEndpoint[] = [
     summary: 'Automate repair recommendations for detected projection drift.',
     responses: [200, 401, 403],
   },
+  {
+    method: 'POST',
+    path: '/api/ops/synthetic-journey/run',
+    group: 'admin',
+    surfaces: PG_ONLY,
+    auth: 'admin',
+    summary: 'Run synthetic journey monitor across critical workflow with latency and dependency blame.',
+    responses: [200, 401, 403, 503],
+  },
+  {
+    method: 'POST',
+    path: '/api/ops/snapshot-restore/verify',
+    group: 'admin',
+    surfaces: PG_ONLY,
+    auth: 'admin',
+    summary: 'Verify snapshot restore package against data invariants and rebuild derived indexes.',
+    responses: [200, 401, 403, 422],
+  },
 
   // ── Webhooks (only mounted when WEBHOOK_SIGNING_SECRET is set) ───────────
   {

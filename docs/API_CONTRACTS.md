@@ -172,6 +172,8 @@ matching the filter, not the page size.
 | `POST` | `/api/ops/policy/simulate` | `admin` | 200, 400, 401, 403 | Simulate policy changes against current dataset before committing. |
 | `GET` | `/api/ops/stale-projections/detect` | `admin` | 200, 401, 403 | Detect projection drift, stale statuses, and orphaned records. |
 | `POST` | `/api/ops/stale-projections/repair` | `admin` | 200, 401, 403 | Automate repair recommendations for detected projection drift. |
+| `POST` | `/api/ops/synthetic-journey/run` | `admin` | 200, 401, 403, 503 | Run synthetic journey monitor across critical workflow with latency and dependency blame. |
+| `POST` | `/api/ops/snapshot-restore/verify` | `admin` | 200, 401, 403, 422 | Verify snapshot restore package against data invariants and rebuild derived indexes. |
 | `POST` | `/api/webhooks/incoming` | `hmac` (conditional) | 200, 400, 401, 408, 409 | Signed inbound webhook receiver. Rejects unsigned, stale and replayed events. |
 
 `/api/webhooks/incoming` is mounted only when `WEBHOOK_SIGNING_SECRET` is set.

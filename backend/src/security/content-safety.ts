@@ -178,3 +178,120 @@ export function securityHeaders() {
     next();
   };
 }
+
+/**
+ * Validates outbound webhook destination URLs to prevent SSRF and unencrypted transmission.
+ * Blocks private IP ranges (RFC 1918), link-local/cloud metadata (169.254.169.254),
+ * loopback addresses, embedded credentials, and non-HTTPS schemes (unless allowHttp is explicit).
+ */
+export function validateWebhookDestinationUrl(
+  input: unknown,
+  options: { allowHttp?: boolean; allowPrivateIp?: boolean } = {}
+): boolean {
+  if (typeof input !== 'string') return false;
+  const raw = input.trim();
+  if (!raw || /[\u0000-\u001F\u007F\s\\]/.test(raw)) return false;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+
+  // Scheme enforcement
+  if (options.allowHttp) {
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  } else {
+    if (url.protocol !== 'https:') return false;
+  }
+
+  // No credentials
+  if (url.username || url.password) return false;
+
+  const hostname = url.hostname.toLowerCase();
+  if (!hostname) return false;
+
+  if (!options.allowPrivateIp) {
+    // Loopback & local
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local')
+    ) {
+      return false;
+    }
+
+    // Cloud metadata services
+    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal' || hostname === 'instance-data') {
+      return false;
+    }
+
+    // IPv4 private ranges (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+    const ipv4Match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+    if (ipv4Match) {
+      const a = parseInt(ipv4Match[1], 10);
+      const b = parseInt(ipv4Match[2], 10);
+      if (a === 10) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 127) return false;
+      if (a === 0) return false;
+      if (a === 169 && b === 254) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Standard allowlisted public fields for webhook payloads.
+ * Prevents accidental leakage of private keys, database internals, and sensitive tokens.
+ */
+export const DEFAULT_WEBHOOK_ALLOWLIST = [
+  'id',
+  'type',
+  'invoiceId',
+  'memo',
+  'status',
+  'amount',
+  'assetCode',
+  'assetIssuer',
+  'sellerPublicKey',
+  'createdAt',
+  'paidAt',
+  'paymentTxHash',
+] as const;
+
+/**
+ * Strips private and internal fields from webhook payloads, ensuring only allowlisted
+ * schema properties are emitted.
+ */
+export function sanitizeWebhookPayload<T extends Record<string, any>>(
+  payload: T,
+  allowlist: readonly string[] = DEFAULT_WEBHOOK_ALLOWLIST
+): Partial<T> {
+  if (!payload || typeof payload !== 'object') {
+    return {};
+  }
+
+  const sanitized: Record<string, any> = {};
+  const allowSet = new Set(allowlist);
+
+  for (const key of Object.keys(payload)) {
+    // Drop prototype pollution / non-own keys
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+
+    // Filter against allowlist
+    if (allowSet.has(key)) {
+      sanitized[key] = payload[key];
+    }
+  }
+
+  return sanitized as Partial<T>;
+}
+
